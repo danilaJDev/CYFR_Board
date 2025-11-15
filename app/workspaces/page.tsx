@@ -1,3 +1,4 @@
+// app/workspaces/page.tsx
 "use client";
 
 import { AppShell } from "@/components/app-shell";
@@ -10,6 +11,7 @@ type Workspace = {
     name: string;
     description: string | null;
     created_at: string;
+    role: string | null;
 };
 
 export default function WorkspacesPage() {
@@ -24,6 +26,7 @@ export default function WorkspacesPage() {
     const [description, setDescription] = useState("");
     const [creating, setCreating] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [deletingId, setDeletingId] = useState<string | null>(null);
 
     // 1. Проверяем пользователя
     useEffect(() => {
@@ -44,7 +47,7 @@ export default function WorkspacesPage() {
         fetchUser();
     }, [router]);
 
-    // 2. Подгружаем рабочие пространства
+    // 2. Подгружаем рабочие пространства, где пользователь состоит
     useEffect(() => {
         if (!userId) return;
 
@@ -53,17 +56,39 @@ export default function WorkspacesPage() {
             setError(null);
 
             const { data, error } = await supabase
-                .from("workspaces")
-                .select("id, name, description, created_at")
-                .order("created_at", { ascending: true });
+                .from("workspace_members")
+                .select(
+                    "role, workspace:workspaces(id, name, description, created_at)"
+                )
+                .eq("user_id", userId);
 
             if (error) {
                 console.error(error);
                 setError(error.message);
-            } else {
-                setWorkspaces((data ?? []) as Workspace[]);
+                setLoadingWorkspaces(false);
+                return;
             }
 
+            const list: Workspace[] =
+                (data as any[])
+                    ?.map((row) => ({
+                        id: row.workspace?.id,
+                        name: row.workspace?.name,
+                        description: row.workspace?.description,
+                        created_at: row.workspace?.created_at,
+                        role: row.role ?? null,
+                    }))
+                    ?.filter((w) => w.id && w.name) ?? [];
+
+            // Убираем дубликаты по id
+            const uniqueById = Object.values(
+                list.reduce<Record<string, Workspace>>((acc, ws) => {
+                    acc[ws.id] = ws;
+                    return acc;
+                }, {})
+            );
+
+            setWorkspaces(uniqueById);
             setLoadingWorkspaces(false);
         };
 
@@ -108,10 +133,52 @@ export default function WorkspacesPage() {
             );
         }
 
-        setWorkspaces((prev) => [...prev, wsData as Workspace]);
+        // Добавляем в список как owner
+        setWorkspaces((prev) => [
+            ...prev,
+            {
+                id: wsData.id,
+                name: wsData.name,
+                description: wsData.description,
+                created_at: wsData.created_at,
+                role: "owner",
+            },
+        ]);
+
         setName("");
         setDescription("");
         setCreating(false);
+    };
+
+    const handleDeleteWorkspace = async (workspace: Workspace) => {
+        if (workspace.role !== "owner") return;
+
+        const confirmed = window.confirm(
+            `Удалить пространство «${workspace.name}»? Все связанные данные могут быть потеряны.`
+        );
+        if (!confirmed) return;
+
+        setDeletingId(workspace.id);
+
+        const { error } = await supabase
+            .from("workspaces")
+            .delete()
+            .eq("id", workspace.id);
+
+        setDeletingId(null);
+
+        if (error) {
+            console.error(error);
+            setError(
+                "Не удалось удалить пространство. Возможно, есть связанные данные или нет прав.\n\n" +
+                error.message
+            );
+            return;
+        }
+
+        setWorkspaces((prev) =>
+            prev.filter((ws) => ws.id !== workspace.id)
+        );
     };
 
     const handleLogout = async () => {
@@ -173,7 +240,7 @@ export default function WorkspacesPage() {
                         />
 
                         {error && (
-                            <p className="text-xs text-red-400">
+                            <p className="text-xs text-red-400 whitespace-pre-line">
                                 {error}
                             </p>
                         )}
@@ -206,17 +273,37 @@ export default function WorkspacesPage() {
                                     className="rounded-xl border border-slate-800 bg-slate-900/80 px-4 py-3 cursor-pointer hover:border-sky-500 hover:bg-slate-800/80 transition"
                                     onClick={() => router.push(`/workspaces/${ws.id}`)}
                                 >
-                                    <div className="flex items-center justify-between gap-2">
-                                        <h3 className="text-sm font-semibold">{ws.name}</h3>
-                                        <span className="text-[11px] text-slate-500">
-                                            {new Date(ws.created_at).toLocaleDateString()}
-                                        </span>
+                                    <div className="flex items-start justify-between gap-2">
+                                        <div>
+                                            <h3 className="text-sm font-semibold">
+                                                {ws.name}
+                                            </h3>
+                                            {ws.description && (
+                                                <p className="mt-1 text-xs text-slate-300">
+                                                    {ws.description}
+                                                </p>
+                                            )}
+                                            <span className="mt-1 block text-[11px] text-slate-500">
+                                                {new Date(
+                                                    ws.created_at
+                                                ).toLocaleDateString()}
+                                            </span>
+                                        </div>
+                                        {ws.role === "owner" && (
+                                            <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    handleDeleteWorkspace(ws);
+                                                }}
+                                                className="text-[11px] text-slate-500 hover:text-red-400 px-1"
+                                            >
+                                                {deletingId === ws.id
+                                                    ? "..."
+                                                    : "Удалить"}
+                                            </button>
+                                        )}
                                     </div>
-                                    {ws.description && (
-                                        <p className="mt-1 text-xs text-slate-300">
-                                            {ws.description}
-                                        </p>
-                                    )}
                                 </li>
                             ))}
                         </ul>

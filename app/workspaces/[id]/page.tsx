@@ -1,3 +1,4 @@
+// app/workspaces/[id]/page.tsx
 "use client";
 
 import { AppShell } from "@/components/app-shell";
@@ -28,6 +29,9 @@ export default function WorkspaceDetailsPage() {
     const workspaceId = params.id as string;
 
     const [userChecked, setUserChecked] = useState(false);
+    const [userId, setUserId] = useState<string | null>(null);
+    const [isOwner, setIsOwner] = useState(false);
+    const [deleting, setDeleting] = useState(false);
 
     const [workspace, setWorkspace] = useState<Workspace | null>(null);
     const [projects, setProjects] = useState<Project[]>([]);
@@ -35,7 +39,6 @@ export default function WorkspaceDetailsPage() {
     const [loadingProjects, setLoadingProjects] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    // Для формы создания проекта
     const [projectName, setProjectName] = useState("");
     const [projectCode, setProjectCode] = useState("");
     const [projectAddress, setProjectAddress] = useState("");
@@ -54,17 +57,18 @@ export default function WorkspaceDetailsPage() {
                 return;
             }
 
+            setUserId(user.id);
             setUserChecked(true);
         };
 
         checkUser();
     }, [router]);
 
-    // 2. Загрузка workspace
+    // 2. Загрузка workspace + проверка роли
     useEffect(() => {
-        if (!userChecked) return;
+        if (!userChecked || !workspaceId || !userId) return;
 
-        const fetchWorkspace = async () => {
+        const fetchWorkspaceAndRole = async () => {
             setLoadingWorkspace(true);
             setError(null);
 
@@ -77,24 +81,39 @@ export default function WorkspaceDetailsPage() {
             if (error) {
                 console.error(error);
                 setError(
-                    error.code === "PGRST116"
+                    (error as any).code === "PGRST116"
                         ? "Рабочее пространство не найдено или нет доступа."
                         : error.message
                 );
                 setWorkspace(null);
-            } else {
-                setWorkspace(data as Workspace);
+                setLoadingWorkspace(false);
+                return;
             }
 
+            setWorkspace(data as Workspace);
+
+            // Проверяем роль пользователя в этом workspace
+            const { data: memberData, error: memberError } = await supabase
+                .from("workspace_members")
+                .select("role")
+                .eq("workspace_id", workspaceId)
+                .eq("user_id", userId)
+                .maybeSingle();
+
+            if (memberError && memberError.code !== "PGRST116") {
+                console.error(memberError);
+            }
+
+            setIsOwner(memberData?.role === "owner");
             setLoadingWorkspace(false);
         };
 
-        fetchWorkspace();
-    }, [userChecked, workspaceId]);
+        fetchWorkspaceAndRole();
+    }, [userChecked, workspaceId, userId]);
 
     // 3. Загрузка projects этого workspace
     useEffect(() => {
-        if (!userChecked) return;
+        if (!userChecked || !workspaceId) return;
 
         const fetchProjects = async () => {
             setLoadingProjects(true);
@@ -170,6 +189,35 @@ export default function WorkspaceDetailsPage() {
         router.push("/workspaces");
     };
 
+    const handleDeleteWorkspace = async () => {
+        if (!workspace || !isOwner) return;
+
+        const confirmed = window.confirm(
+            `Удалить пространство «${workspace.name}»? Все связанные данные могут быть потеряны.`
+        );
+        if (!confirmed) return;
+
+        setDeleting(true);
+
+        const { error } = await supabase
+            .from("workspaces")
+            .delete()
+            .eq("id", workspace.id);
+
+        setDeleting(false);
+
+        if (error) {
+            console.error(error);
+            setError(
+                "Не удалось удалить пространство. Возможно, есть связанные данные или нет прав.\n\n" +
+                error.message
+            );
+            return;
+        }
+
+        router.push("/workspaces");
+    };
+
     if (!userChecked) {
         return (
             <AppShell>
@@ -213,7 +261,7 @@ export default function WorkspaceDetailsPage() {
     return (
         <AppShell>
             <div className="page-inner space-y-8">
-                {/* Верхний блок: название workspace + кнопка назад */}
+                {/* Верхний блок: название workspace + кнопки */}
                 <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                     <div className="flex items-start gap-3">
                         <button
@@ -231,6 +279,17 @@ export default function WorkspaceDetailsPage() {
                             )}
                         </div>
                     </div>
+
+                    {isOwner && (
+                        <button
+                            type="button"
+                            onClick={handleDeleteWorkspace}
+                            disabled={deleting}
+                            className="btn-outline btn-sm border-red-500 text-red-400 hover:bg-red-500/10 hover:text-red-300"
+                        >
+                            {deleting ? "Удаляем..." : "Удалить пространство"}
+                        </button>
+                    )}
                 </div>
 
                 {/* Форма создания объекта/проекта */}
@@ -282,7 +341,7 @@ export default function WorkspaceDetailsPage() {
                         </div>
 
                         {error && (
-                            <p className="text-xs text-red-400 md:col-span-2">
+                            <p className="text-xs text-red-400 md:col-span-2 whitespace-pre-line">
                                 {error}
                             </p>
                         )}

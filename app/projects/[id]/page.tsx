@@ -4,6 +4,12 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { AppShell } from "@/components/app-shell";
+import {
+    DragDropContext,
+    Droppable,
+    Draggable,
+    type DropResult,
+} from "@hello-pangea/dnd";
 
 type Project = {
     id: string;
@@ -96,7 +102,7 @@ export default function ProjectPage() {
                 console.error(error);
                 setProject(null);
                 setProjectError(
-                    error.code === "PGRST116"
+                    (error as any).code === "PGRST116"
                         ? "Проект не найден или нет доступа."
                         : error.message
                 );
@@ -139,7 +145,7 @@ export default function ProjectPage() {
         fetchTasks();
     }, [userChecked, projectId]);
 
-    // Группировка задач по статусам для мини-Kanban
+    // Группировка задач по статусам для Kanban
     const tasksByStatus = useMemo(() => {
         const groups: Record<string, Task[]> = {
             todo: [],
@@ -202,7 +208,9 @@ export default function ProjectPage() {
 
         if (error || !data) {
             console.error(error);
-            setCreateError(error?.message || "Не удалось создать задачу");
+            setCreateError(
+                (error as any)?.message || "Не удалось создать задачу"
+            );
             setCreatingTask(false);
             return;
         }
@@ -215,18 +223,35 @@ export default function ProjectPage() {
         setCreatingTask(false);
     };
 
-    const handleStatusChange = async (taskId: string, newStatus: string) => {
+    // === DRAG'N'DROP ===
+    const handleDragEnd = async (result: DropResult) => {
+        const { destination, source, draggableId } = result;
+
+        // Если бросили мимо колонок
+        if (!destination) return;
+
+        const sourceStatus = source.droppableId;
+        const destStatus = destination.droppableId;
+
+        // Если колонка не поменялась — просто игнорируем (пока не делаем сортировку внутри колонки)
+        if (sourceStatus === destStatus) return;
+
+        // Локально обновляем статус задачи
         setTasks((prev) =>
-            prev.map((t) => (t.id === taskId ? { ...t, status: newStatus } : t))
+            prev.map((task) =>
+                task.id === draggableId ? { ...task, status: destStatus } : task
+            )
         );
 
+        // Пишем в Supabase
         const { error } = await supabase
             .from("tasks")
-            .update({ status: newStatus })
-            .eq("id", taskId);
+            .update({ status: destStatus })
+            .eq("id", draggableId);
 
         if (error) {
             console.error(error);
+            // Если апдейт не удался — откатываемся, перезагружая задачи из БД
             const { data } = await supabase
                 .from("tasks")
                 .select(
@@ -382,7 +407,7 @@ export default function ProjectPage() {
                     </form>
                 </section>
 
-                {/* Задачи (мини-Kanban) */}
+                {/* Задачи (Kanban с drag'n'drop) */}
                 <section className="space-y-3">
                     <h2 className="card-title">Задачи по объекту</h2>
 
@@ -397,75 +422,83 @@ export default function ProjectPage() {
                             Пока нет задач. Создайте первую выше.
                         </p>
                     ) : (
-                        <div className="grid gap-4 md:grid-cols-3">
-                            {STATUS_ORDER.map((statusKey) => (
-                                <div
-                                    key={statusKey}
-                                    className="rounded-xl border border-slate-800 bg-slate-900/80 p-3 flex flex-col gap-2 min-h-[140px]"
-                                >
-                                    <div className="mb-1 flex items-center justify-between">
-                                        <h3 className="text-sm font-semibold">
-                                            {STATUS_LABELS[statusKey]}
-                                        </h3>
-                                        <span className="text-[11px] text-slate-400">
-                                            {tasksByStatus[statusKey].length}
-                                        </span>
-                                    </div>
-
-                                    {tasksByStatus[statusKey].length === 0 ? (
-                                        <p className="text-[11px] text-slate-500">
-                                            Нет задач в этом статусе.
-                                        </p>
-                                    ) : (
-                                        tasksByStatus[statusKey].map((task) => (
+                        <DragDropContext onDragEnd={handleDragEnd}>
+                            <div className="grid gap-4 md:grid-cols-3">
+                                {STATUS_ORDER.map((statusKey) => (
+                                    <Droppable droppableId={statusKey} key={statusKey}>
+                                        {(provided) => (
                                             <div
-                                                key={task.id}
-                                                className="rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2 text-xs flex flex-col gap-1"
+                                                ref={provided.innerRef}
+                                                {...provided.droppableProps}
+                                                className="rounded-xl border border-slate-800 bg-slate-900/80 p-3 flex flex-col gap-2 min-h-[140px]"
                                             >
-                                                <div className="flex justify-between gap-2">
-                                                    <span className="font-medium text-slate-50">
-                                                        {task.title}
+                                                <div className="mb-1 flex items-center justify-between">
+                                                    <h3 className="text-sm font-semibold">
+                                                        {STATUS_LABELS[statusKey]}
+                                                    </h3>
+                                                    <span className="text-[11px] text-slate-400">
+                                                        {tasksByStatus[statusKey].length}
                                                     </span>
-                                                    <select
-                                                        className="rounded border border-slate-700 bg-slate-900 px-1 py-0.5 text-[10px]"
-                                                        value={task.status}
-                                                        onChange={(e) =>
-                                                            handleStatusChange(task.id, e.target.value)
-                                                        }
-                                                    >
-                                                        {STATUS_ORDER.map((s) => (
-                                                            <option key={s} value={s}>
-                                                                {STATUS_LABELS[s]}
-                                                            </option>
-                                                        ))}
-                                                    </select>
                                                 </div>
 
-                                                {task.description && (
-                                                    <p className="text-[11px] text-slate-300 line-clamp-2">
-                                                        {task.description}
+                                                {tasksByStatus[statusKey].length === 0 ? (
+                                                    <p className="text-[11px] text-slate-500">
+                                                        Нет задач в этом статусе.
                                                     </p>
+                                                ) : (
+                                                    tasksByStatus[statusKey].map((task, index) => (
+                                                        <Draggable
+                                                            key={task.id}
+                                                            draggableId={task.id}
+                                                            index={index}
+                                                        >
+                                                            {(provided) => (
+                                                                <div
+                                                                    ref={provided.innerRef}
+                                                                    {...provided.draggableProps}
+                                                                    {...provided.dragHandleProps}
+                                                                    className="rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2 text-xs flex flex-col gap-1 cursor-grab active:cursor-grabbing"
+                                                                >
+                                                                    <div className="flex justify-between gap-2">
+                                                                        <span className="font-medium text-slate-50">
+                                                                            {task.title}
+                                                                        </span>
+                                                                    </div>
+
+                                                                    {task.description && (
+                                                                        <p className="text-[11px] text-slate-300 line-clamp-2">
+                                                                            {task.description}
+                                                                        </p>
+                                                                    )}
+
+                                                                    <div className="mt-1 flex items-center justify-between">
+                                                                        {task.priority && (
+                                                                            <span className="text-[10px] uppercase tracking-wide text-slate-500">
+                                                                                Приоритет: {task.priority}
+                                                                            </span>
+                                                                        )}
+                                                                        {task.due_date && (
+                                                                            <span className="text-[10px] text-slate-500">
+                                                                                Дедлайн:{" "}
+                                                                                {new Date(
+                                                                                    task.due_date
+                                                                                ).toLocaleDateString()}
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                        </Draggable>
+                                                    ))
                                                 )}
 
-                                                <div className="mt-1 flex items-center justify-between">
-                                                    {task.priority && (
-                                                        <span className="text-[10px] uppercase tracking-wide text-slate-500">
-                                                            Приоритет: {task.priority}
-                                                        </span>
-                                                    )}
-                                                    {task.due_date && (
-                                                        <span className="text-[10px] text-slate-500">
-                                                            Дедлайн:{" "}
-                                                            {new Date(task.due_date).toLocaleDateString()}
-                                                        </span>
-                                                    )}
-                                                </div>
+                                                {provided.placeholder}
                                             </div>
-                                        ))
-                                    )}
-                                </div>
-                            ))}
-                        </div>
+                                        )}
+                                    </Droppable>
+                                ))}
+                            </div>
+                        </DragDropContext>
                     )}
                 </section>
             </div>
