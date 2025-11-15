@@ -1,5 +1,6 @@
 "use client";
 
+import { AppShell } from "@/components/app-shell";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
@@ -51,7 +52,6 @@ export default function WorkspacesPage() {
             setLoadingWorkspaces(true);
             setError(null);
 
-            // Берём workspaces, к которым у пользователя есть доступ через RLS
             const { data, error } = await supabase
                 .from("workspaces")
                 .select("id, name, description, created_at")
@@ -77,7 +77,6 @@ export default function WorkspacesPage() {
         setCreating(true);
         setError(null);
 
-        // 1. создаём workspace
         const { data: wsData, error: wsError } = await supabase
             .from("workspaces")
             .insert({
@@ -94,7 +93,6 @@ export default function WorkspacesPage() {
             return;
         }
 
-        // 2. добавляем самого себя как owner в workspace_members
         const { error: memberError } = await supabase
             .from("workspace_members")
             .insert({
@@ -105,11 +103,11 @@ export default function WorkspacesPage() {
 
         if (memberError) {
             console.error(memberError);
-            setError("Workspace создан, но не получилось сохранить членство (owner).");
-            // всё равно покажем workspace в списке, т.к. RLS уже пропустит
+            setError(
+                "Workspace создан, но не получилось сохранить членство (owner)."
+            );
         }
 
-        // обновляем список
         setWorkspaces((prev) => [...prev, wsData as Workspace]);
         setName("");
         setDescription("");
@@ -123,52 +121,67 @@ export default function WorkspacesPage() {
 
     if (loadingUser) {
         return (
-            <main className="min-h-screen flex items-center justify-center">
-                <p>Загрузка...</p>
-            </main>
+            <AppShell>
+                <div className="page-inner flex min-h-[50vh] items-center justify-center">
+                    <p className="text-sm text-slate-300">Загрузка...</p>
+                </div>
+            </AppShell>
         );
     }
 
     return (
-        <main className="min-h-screen bg-gray-50">
-            <header className="flex justify-between items-center px-6 py-4 border-b bg-white">
-                <h1 className="text-xl font-semibold">Рабочие пространства</h1>
-                <button
-                    onClick={handleLogout}
-                    className="text-xs px-3 py-1 border rounded"
-                >
-                    Выйти
-                </button>
-            </header>
+        <AppShell>
+            <div className="page-inner space-y-8">
+                {/* Заголовок + кнопка выхода */}
+                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                    <div>
+                        <h1 className="text-xl font-semibold">Рабочие пространства</h1>
+                        <p className="mt-1 text-sm text-slate-400">
+                            Объединяйте объекты, отделы и задачи в удобные рабочие области.
+                        </p>
+                    </div>
+                    <button
+                        onClick={handleLogout}
+                        className="btn-outline btn-sm self-start md:self-auto"
+                    >
+                        Выйти
+                    </button>
+                </div>
 
-            <div className="max-w-4xl mx-auto p-6 space-y-8">
                 {/* Форма создания workspace */}
-                <section className="bg-white rounded-lg shadow p-4 space-y-4">
-                    <h2 className="text-lg font-medium">Создать новое пространство</h2>
-                    <form onSubmit={handleCreateWorkspace} className="space-y-3">
+                <section className="card space-y-4">
+                    <h2 className="card-title">Создать новое пространство</h2>
+                    <form
+                        onSubmit={handleCreateWorkspace}
+                        className="flex flex-col gap-3"
+                    >
                         <input
                             type="text"
                             placeholder="Название (например: Объекты CYFR, Отдел продаж)"
-                            className="w-full border rounded px-3 py-2 text-sm"
+                            className="input"
                             value={name}
                             onChange={(e) => setName(e.target.value)}
                             required
                         />
 
                         <textarea
-                            placeholder="Описание (необязательно: какие объекты/отделы будут внутри)"
-                            className="w-full border rounded px-3 py-2 text-sm"
+                            placeholder="Описание (какие объекты/отделы будут внутри)"
+                            className="textarea"
                             rows={3}
                             value={description}
                             onChange={(e) => setDescription(e.target.value)}
                         />
 
-                        {error && <p className="text-sm text-red-500">{error}</p>}
+                        {error && (
+                            <p className="text-xs text-red-400">
+                                {error}
+                            </p>
+                        )}
 
                         <button
                             type="submit"
                             disabled={creating}
-                            className="px-4 py-2 rounded bg-blue-600 text-white text-sm font-medium disabled:opacity-60"
+                            className="btn-primary w-full md:w-auto"
                         >
                             {creating ? "Создаём..." : "Создать пространство"}
                         </button>
@@ -177,30 +190,30 @@ export default function WorkspacesPage() {
 
                 {/* Список workspaces */}
                 <section className="space-y-3">
-                    <h2 className="text-lg font-medium">Мои пространства</h2>
+                    <h2 className="card-title">Мои пространства</h2>
 
                     {loadingWorkspaces ? (
-                        <p className="text-sm text-gray-500">Загружаем...</p>
+                        <p className="text-sm text-slate-400">Загружаем...</p>
                     ) : workspaces.length === 0 ? (
-                        <p className="text-sm text-gray-500">
+                        <p className="text-sm text-slate-400">
                             Пока нет ни одного пространства. Создайте первое выше.
                         </p>
                     ) : (
-                        <ul className="space-y-2">
+                        <ul className="grid gap-3 md:grid-cols-2">
                             {workspaces.map((ws) => (
                                 <li
                                     key={ws.id}
-                                    className="bg-white rounded-lg shadow px-4 py-3 cursor-pointer hover:bg-gray-50"
+                                    className="rounded-xl border border-slate-800 bg-slate-900/80 px-4 py-3 cursor-pointer hover:border-sky-500 hover:bg-slate-800/80 transition"
                                     onClick={() => router.push(`/workspaces/${ws.id}`)}
                                 >
-                                    <div className="flex justify-between items-center">
-                                        <h3 className="font-medium text-sm">{ws.name}</h3>
-                                        <span className="text-xs text-gray-400">
+                                    <div className="flex items-center justify-between gap-2">
+                                        <h3 className="text-sm font-semibold">{ws.name}</h3>
+                                        <span className="text-[11px] text-slate-500">
                                             {new Date(ws.created_at).toLocaleDateString()}
                                         </span>
                                     </div>
                                     {ws.description && (
-                                        <p className="text-xs text-gray-600 mt-1">
+                                        <p className="mt-1 text-xs text-slate-300">
                                             {ws.description}
                                         </p>
                                     )}
@@ -210,6 +223,6 @@ export default function WorkspacesPage() {
                     )}
                 </section>
             </div>
-        </main>
+        </AppShell>
     );
 }

@@ -1,3 +1,4 @@
+// app/register/page.tsx
 "use client";
 
 import { useState } from "react";
@@ -28,60 +29,86 @@ export default function RegisterPage() {
 
     if (error) {
       setError(error.message);
-    } else {
-      // зависит от настроек Supabase: может требоваться подтверждение email
-      if (data.user && !data.session) {
-        setMessage("Проверьте email, чтобы подтвердить регистрацию.");
-      } else {
-        router.push("/workspaces");
-      }
+      return;
     }
+
+    // Если email-конфирм выключен и есть session — сразу в личный кабинет
+    if (data.session) {
+      router.push("/account");
+      return;
+    }
+
+    // Если Supabase требует подтверждение email
+    setMessage("Проверьте email, чтобы подтвердить регистрацию, затем выполните вход.");
   };
 
   return (
-    <main className="min-h-screen flex items-center justify-center bg-gray-50">
-      <div className="w-full max-w-md bg-white rounded-xl shadow p-6 space-y-6">
-        <h1 className="text-2xl font-semibold text-center">Регистрация</h1>
+    <div className="page-container flex min-h-screen items-center justify-center px-4">
+      <div className="w-full max-w-md card space-y-6">
+        <div className="text-center space-y-1">
+          <h1 className="card-title">Регистрация</h1>
+          <p className="card-subtitle">
+            Создайте аккаунт, чтобы работать с объектами и отделами CYFR FITOUT.
+          </p>
+        </div>
 
         <form onSubmit={handleRegister} className="flex flex-col gap-3">
-          <input
-            type="email"
-            placeholder="Email"
-            className="border rounded px-3 py-2 text-sm"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-          />
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-slate-300">
+              Email
+            </label>
+            <input
+              type="email"
+              placeholder="you@company.com"
+              className="input"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+            />
+          </div>
 
-          <input
-            type="password"
-            placeholder="Пароль (мин. 6 символов)"
-            className="border rounded px-3 py-2 text-sm"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            minLength={6}
-            required
-          />
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-slate-300">
+              Пароль
+            </label>
+            <input
+              type="password"
+              placeholder="Минимум 6 символов"
+              className="input"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              minLength={6}
+              required
+            />
+          </div>
 
-          {error && <p className="text-red-500 text-sm">{error}</p>}
-          {message && <p className="text-green-600 text-sm">{message}</p>}
+          {error && (
+            <p className="text-xs text-red-400 mt-1">
+              {error}
+            </p>
+          )}
+          {message && (
+            <p className="text-xs text-emerald-400 mt-1">
+              {message}
+            </p>
+          )}
 
           <button
             type="submit"
             disabled={loading}
-            className="mt-2 py-2 rounded bg-blue-600 text-white text-sm font-medium disabled:opacity-60"
+            className="btn-primary mt-2 w-full"
           >
             {loading ? "Создаём аккаунт..." : "Зарегистрироваться"}
           </button>
         </form>
 
-        <p className="text-xs text-center text-gray-500">
+        <p className="text-[11px] text-center text-slate-400">
           Уже есть аккаунт?{" "}
-          <Link href="/login" className="text-blue-600 hover:underline">
+          <Link href="/login" className="text-sky-400 hover:text-sky-300">
             Войти
           </Link>
         </p>
       </div>
-    </main>
+    </div>
   );
 }
