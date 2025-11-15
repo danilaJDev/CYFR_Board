@@ -10,6 +10,7 @@ import {
     Draggable,
     type DropResult,
 } from "@hello-pangea/dnd";
+import { Modal } from "@/components/modal";
 
 type Project = {
     id: string;
@@ -76,6 +77,7 @@ export default function ProjectPage() {
     const [creatingTask, setCreatingTask] = useState(false);
     const [createError, setCreateError] = useState<string | null>(null);
     const [newTaskAssignees, setNewTaskAssignees] = useState<string[]>([]);
+    const [isModalOpen, setIsModalOpen] = useState(false);
 
     // Удаление задач / проекта
     const [deletingProject, setDeletingProject] = useState(false);
@@ -587,9 +589,11 @@ export default function ProjectPage() {
                     </section>
                 )}
 
-                {/* Форма создания задачи */}
-                <section className="card space-y-4">
-                    <h2 className="card-title">Создание новой задачи</h2>
+                <Modal
+                    isOpen={isModalOpen}
+                    onClose={() => setIsModalOpen(false)}
+                    title="Создание новой задачи"
+                >
                     <form
                         onSubmit={handleCreateTask}
                         className="grid gap-3 md:grid-cols-2"
@@ -687,7 +691,7 @@ export default function ProjectPage() {
                             </button>
                         </div>
                     </form>
-                </section>
+                </Modal>
 
                 {/* Задачи (Kanban с drag'n'drop + исполнители) */}
                 <section className="space-y-3">
@@ -697,12 +701,12 @@ export default function ProjectPage() {
                         <p className="text-xs text-red-400">{tasksError}</p>
                     )}
 
+                    {tasksError && (
+                        <p className="text-xs text-red-400">{tasksError}</p>
+                    )}
+
                     {loadingTasks ? (
                         <p className="text-sm text-slate-400">Загружаем задачи...</p>
-                    ) : tasks.length === 0 ? (
-                        <p className="text-sm text-slate-400">
-                            Пока нет задач. Создайте первую выше.
-                        </p>
                     ) : (
                         <DragDropContext onDragEnd={handleDragEnd}>
                             <div className="grid gap-4 md:grid-cols-3">
@@ -712,12 +716,18 @@ export default function ProjectPage() {
                                             <div
                                                 ref={provided.innerRef}
                                                 {...provided.droppableProps}
-                                                className="rounded-xl border border-slate-800 bg-slate-900/80 p-3 flex flex-col gap-2 min-h-[140px]"
+                                                className="group rounded-xl border border-slate-800 bg-slate-900/80 p-3 flex flex-col gap-2 min-h-[140px]"
                                             >
                                                 <div className="mb-1 flex items-center justify-between">
                                                     <h3 className="text-sm font-semibold">
                                                         {STATUS_LABELS[statusKey]}
                                                     </h3>
+                                                    <button
+                                                        onClick={() => setIsModalOpen(true)}
+                                                        className="btn-outline btn-sm"
+                                                    >
+                                                        +
+                                                    </button>
                                                     <span className="text-[11px] text-slate-400">
                                                         {tasksByStatus[statusKey].length}
                                                     </span>

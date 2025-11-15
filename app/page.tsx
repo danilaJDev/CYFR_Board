@@ -57,36 +57,32 @@ export default function HomePage() {
 
   if (checking) {
     return (
-      <div className="page-container">
-        <main className="flex min-h-screen items-center justify-center">
-          <p className="text-sm text-slate-300">Загрузка...</p>
-        </main>
+      <div className="flex min-h-screen items-center justify-center">
+        <p className="text-sm text-slate-400">Загрузка приложения...</p>
       </div>
     );
   }
 
   return (
-    <div className="page-container">
-      <main className="page-inner flex min-h-[calc(100vh-0px)] flex-col items-center justify-center gap-6 text-center">
-        <div>
-          <h1 className="text-3xl md:text-4xl font-semibold tracking-tight">
-            CYFR Board
-          </h1>
-          <p className="mt-3 max-w-md text-sm md:text-base text-slate-400">
-            Войдите или зарегистрируйтесь, чтобы работать с объектами,
-            отделами и задачами CYFR FITOUT L.L.C.
-          </p>
-        </div>
+    <main className="flex min-h-screen flex-col items-center justify-center gap-6 text-center p-4">
+      <div>
+        <h1 className="text-4xl md:text-5xl font-bold tracking-tight text-slate-50">
+          CYFR Board
+        </h1>
+        <p className="mt-4 max-w-md text-sm md:text-base text-slate-400">
+          Войдите или зарегистрируйтесь, чтобы работать с объектами,
+          отделами и задачами CYFR FITOUT L.L.C.
+        </p>
+      </div>
 
-        <div className="flex flex-col sm:flex-row gap-3">
-          <Link href="/login" className="btn-primary">
-            Войти
-          </Link>
-          <Link href="/register" className="btn-outline">
-            Регистрация
-          </Link>
-        </div>
-      </main>
-    </div>
+      <div className="flex flex-col sm:flex-row gap-4">
+        <Link href="/login" className="btn-primary">
+          Войти
+        </Link>
+        <Link href="/register" className="btn-outline">
+          Регистрация
+        </Link>
+      </div>
+    </main>
   );
 }
