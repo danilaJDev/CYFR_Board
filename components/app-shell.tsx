@@ -96,44 +96,44 @@ export function AppShell({ children }: { children: ReactNode }) {
     };
 
     return (
-        <div className="min-h-screen bg-slate-950 text-slate-50">
+        <div className="min-h-screen bg-slate-900 text-slate-200">
             <TopBar />
 
             <div className="flex min-h-[calc(100vh-56px)]">
                 {/* ЛЕВАЯ ПАНЕЛЬ: ПРОСТРАНСТВА */}
-                <aside className="hidden md:block w-64 border-r border-slate-800 bg-slate-950/80">
+                <aside className="hidden md:block w-64 border-r border-slate-800 bg-slate-900/60">
                     <nav className="flex flex-col gap-2 p-4 text-sm">
-                        <span className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">
+                        <span className="text-xs uppercase tracking-wider text-slate-500 mb-2">
                             Пространства
                         </span>
 
                         {/* Ссылка "Все пространства" */}
                         <Link
                             href="/workspaces"
-                            className="rounded-lg px-2 py-1 text-slate-200 hover:bg-slate-800 hover:text-sky-300 transition"
+                            className="rounded-md px-3 py-2 text-slate-300 hover:bg-slate-800 hover:text-sky-400 transition font-medium"
                         >
                             Все пространства
                         </Link>
 
                         {/* Список пространств пользователя */}
                         {loadingWs ? (
-                            <span className="text-[11px] text-slate-500 mt-1">
-                                Загрузка списков...
+                            <span className="text-xs text-slate-500 mt-2 px-3">
+                                Загрузка...
                             </span>
                         ) : workspaces.length === 0 ? (
-                            <span className="text-[11px] text-slate-500 mt-1">
-                                Пока нет доступных пространств.
+                            <span className="text-xs text-slate-500 mt-2 px-3">
+                                Нет доступных пространств.
                             </span>
                         ) : (
-                            <div className="mt-1 flex flex-col gap-1">
+                            <div className="mt-2 flex flex-col gap-1 border-t border-slate-800 pt-3">
                                 {workspaces.map((ws) => (
                                     <div
                                         key={ws.id}
-                                        className="flex items-center gap-1 rounded-lg px-2 py-1 hover:bg-slate-800 transition group"
+                                        className="flex items-center gap-2 rounded-md px-3 py-1.5 hover:bg-slate-800 transition group"
                                     >
                                         <Link
                                             href={`/workspaces/${ws.id}`}
-                                            className="flex-1 truncate text-slate-200 group-hover:text-sky-300 text-xs"
+                                            className="flex-1 truncate text-slate-300 group-hover:text-sky-400 text-sm"
                                             title={ws.name}
                                         >
                                             {ws.name}
@@ -144,7 +144,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                                                 onClick={() =>
                                                     handleDeleteWorkspace(ws.id, ws.name)
                                                 }
-                                                className="text-[12px] text-slate-500 hover:text-red-400 px-1"
+                                                className="text-sm text-slate-500 hover:text-red-400 opacity-50 group-hover:opacity-100"
                                                 title="Удалить пространство"
                                             >
                                                 ✕
@@ -158,8 +158,10 @@ export function AppShell({ children }: { children: ReactNode }) {
                 </aside>
 
                 {/* ОСНОВНОЙ КОНТЕНТ */}
-                <main className="flex-1 px-4 py-6 md:px-8 md:py-8">
-                    {children}
+                <main className="flex-1">
+                    <div className="page-inner">
+                        {children}
+                    </div>
                 </main>
             </div>
         </div>
