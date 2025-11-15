@@ -22,15 +22,24 @@ type Project = {
     created_at: string;
 };
 
-type Task = {
+type TaskAssigneeRow = {
+    user_id: string;
+};
+
+type TaskRow = {
     id: string;
     title: string;
     description: string | null;
     status: string;
-    priority: string | null;
-    assignee_id: string | null;
+    assignee_id: string | null; // старое поле, не используем, но оставим в типе
     due_date: string | null;
     created_at: string;
+    task_assignees?: TaskAssigneeRow[];
+};
+
+type WorkspaceUser = {
+    id: string;
+    name: string;
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -52,18 +61,23 @@ export default function ProjectPage() {
     const [loadingProject, setLoadingProject] = useState(true);
     const [projectError, setProjectError] = useState<string | null>(null);
 
-    const [tasks, setTasks] = useState<Task[]>([]);
+    const [tasks, setTasks] = useState<TaskRow[]>([]);
     const [loadingTasks, setLoadingTasks] = useState(true);
     const [tasksError, setTasksError] = useState<string | null>(null);
+
+    // Участники текущего workspace
+    const [workspaceUsers, setWorkspaceUsers] = useState<WorkspaceUser[]>([]);
+    const [loadingMembers, setLoadingMembers] = useState(false);
 
     // Форма создания задачи
     const [taskTitle, setTaskTitle] = useState("");
     const [taskDescription, setTaskDescription] = useState("");
-    const [taskPriority, setTaskPriority] = useState("normal");
     const [taskDueDate, setTaskDueDate] = useState("");
     const [creatingTask, setCreatingTask] = useState(false);
     const [createError, setCreateError] = useState<string | null>(null);
+    const [newTaskAssignees, setNewTaskAssignees] = useState<string[]>([]);
 
+    // Удаление задач / проекта
     const [deletingProject, setDeletingProject] = useState(false);
 
     // 1. Проверяем, залогинен ли пользователь
@@ -118,7 +132,7 @@ export default function ProjectPage() {
         fetchProject();
     }, [userChecked, projectId]);
 
-    // 3. Загружаем задачи проекта
+    // 3. Загружаем задачи проекта (с исполнителями)
     useEffect(() => {
         if (!userChecked) return;
 
@@ -129,7 +143,7 @@ export default function ProjectPage() {
             const { data, error } = await supabase
                 .from("tasks")
                 .select(
-                    "id, title, description, status, priority, assignee_id, due_date, created_at"
+                    "id, title, description, status, assignee_id, due_date, created_at, task_assignees ( user_id )"
                 )
                 .eq("project_id", projectId)
                 .order("created_at", { ascending: true });
@@ -138,7 +152,7 @@ export default function ProjectPage() {
                 console.error(error);
                 setTasksError(error.message);
             } else {
-                setTasks((data ?? []) as Task[]);
+                setTasks((data ?? []) as TaskRow[]);
             }
 
             setLoadingTasks(false);
@@ -147,9 +161,73 @@ export default function ProjectPage() {
         fetchTasks();
     }, [userChecked, projectId]);
 
+    // 4. Загружаем участников workspace (после загрузки проекта, т.к. нам нужен workspace_id)
+    useEffect(() => {
+        if (!userChecked || !project) return;
+
+        const fetchMembers = async () => {
+            setLoadingMembers(true);
+
+            // 1) берём всех user_id из workspace_members
+            const { data: members, error: membersError } = await supabase
+                .from("workspace_members")
+                .select("user_id")
+                .eq("workspace_id", project.workspace_id);
+
+            if (membersError) {
+                console.error(membersError);
+                setWorkspaceUsers([]);
+                setLoadingMembers(false);
+                return;
+            }
+
+            const userIds = (members ?? []).map((m: any) => m.user_id) as string[];
+
+            if (userIds.length === 0) {
+                setWorkspaceUsers([]);
+                setLoadingMembers(false);
+                return;
+            }
+
+            // 2) загружаем профили этих пользователей
+            const { data: profiles, error: profilesError } = await supabase
+                .from("profiles")
+                .select("id, first_name, second_name")
+                .in("id", userIds);
+
+            if (profilesError) {
+                console.error(profilesError);
+                // fallback: просто список ID
+                const fallback = userIds.map((id) => ({
+                    id,
+                    name: "Пользователь",
+                }));
+                setWorkspaceUsers(fallback);
+                setLoadingMembers(false);
+                return;
+            }
+
+            const users: WorkspaceUser[] = userIds.map((id) => {
+                const p = (profiles ?? []).find((pr: any) => pr.id === id);
+                const fullName =
+                    [p?.first_name, p?.second_name].filter(Boolean).join(" ") ||
+                    "Пользователь";
+                return {
+                    id,
+                    name: fullName,
+                };
+            });
+
+            setWorkspaceUsers(users);
+            setLoadingMembers(false);
+        };
+
+        fetchMembers();
+    }, [userChecked, project]);
+
     // Группировка задач по статусам для Kanban
     const tasksByStatus = useMemo(() => {
-        const groups: Record<string, Task[]> = {
+        const groups: Record<string, TaskRow[]> = {
             todo: [],
             in_progress: [],
             done: [],
@@ -173,6 +251,7 @@ export default function ProjectPage() {
         }
     };
 
+    // Создание задачи с назначением исполнителей
     const handleCreateTask = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!project) return;
@@ -190,6 +269,7 @@ export default function ProjectPage() {
             return;
         }
 
+        // 1. создаём задачу
         const { data, error } = await supabase
             .from("tasks")
             .insert({
@@ -198,13 +278,12 @@ export default function ProjectPage() {
                 title: taskTitle,
                 description: taskDescription || null,
                 status: "todo",
-                priority: taskPriority || "normal",
-                assignee_id: user.id,
+                assignee_id: null, // одиночное поле не используем
                 due_date: taskDueDate || null,
                 created_by: user.id,
             })
             .select(
-                "id, title, description, status, priority, assignee_id, due_date, created_at"
+                "id, title, description, status, assignee_id, due_date, created_at"
             )
             .single();
 
@@ -217,14 +296,189 @@ export default function ProjectPage() {
             return;
         }
 
-        setTasks((prev) => [...prev, data as Task]);
+        let assigneesRows: TaskAssigneeRow[] = [];
+
+        // 2. если выбраны исполнители — записываем их в task_assignees
+        if (newTaskAssignees.length > 0) {
+            const payload = newTaskAssignees.map((uid) => ({
+                task_id: (data as any).id,
+                user_id: uid,
+            }));
+
+            const { data: inserted, error: assigneesError } = await supabase
+                .from("task_assignees")
+                .insert(payload)
+                .select("user_id");
+
+            if (assigneesError) {
+                console.error(assigneesError);
+                // не падаем, просто создаём задачу без назначений
+            } else {
+                assigneesRows = (inserted ?? []) as TaskAssigneeRow[];
+            }
+        }
+
+        const newTask: TaskRow = {
+            ...(data as any),
+            task_assignees: assigneesRows,
+        };
+
+        setTasks((prev) => [...prev, newTask]);
+
+        // Сброс формы
         setTaskTitle("");
         setTaskDescription("");
-        setTaskPriority("normal");
         setTaskDueDate("");
+        setNewTaskAssignees([]);
         setCreatingTask(false);
     };
 
+    // DRAG'N'DROP смена статуса
+    const handleDragEnd = async (result: DropResult) => {
+        const { destination, source, draggableId } = result;
+
+        if (!destination) return;
+
+        const sourceStatus = source.droppableId;
+        const destStatus = destination.droppableId;
+
+        if (sourceStatus === destStatus) return;
+
+        // локально меняем статус
+        setTasks((prev) =>
+            prev.map((task) =>
+                task.id === draggableId ? { ...task, status: destStatus } : task
+            )
+        );
+
+        const { error } = await supabase
+            .from("tasks")
+            .update({ status: destStatus })
+            .eq("id", draggableId);
+
+        if (error) {
+            console.error(error);
+            // откат: перечитываем задачи
+            const { data } = await supabase
+                .from("tasks")
+                .select(
+                    "id, title, description, status, assignee_id, due_date, created_at, task_assignees ( user_id )"
+                )
+                .eq("project_id", projectId)
+                .order("created_at", { ascending: true });
+
+            setTasks((data ?? []) as TaskRow[]);
+        }
+    };
+
+    // Удаление задачи
+    const handleDeleteTask = async (taskId: string) => {
+        const confirmed = window.confirm("Удалить задачу?");
+        if (!confirmed) return;
+
+        setTasks((prev) => prev.filter((t) => t.id !== taskId));
+
+        const { error } = await supabase
+            .from("tasks")
+            .delete()
+            .eq("id", taskId);
+
+        if (error) {
+            console.error(error);
+            alert(
+                "Не удалось удалить задачу. Возможно, нет прав.\n\n" +
+                error.message
+            );
+
+            const { data } = await supabase
+                .from("tasks")
+                .select(
+                    "id, title, description, status, assignee_id, due_date, created_at, task_assignees ( user_id )"
+                )
+                .eq("project_id", projectId)
+                .order("created_at", { ascending: true });
+
+            setTasks((data ?? []) as TaskRow[]);
+        }
+    };
+
+    // Назначение / снятие исполнителя у конкретной задачи
+    const handleToggleAssignee = async (
+        taskId: string,
+        userId: string,
+        checked: boolean
+    ) => {
+        // Оптимистично обновляем локально
+        setTasks((prev) =>
+            prev.map((task) => {
+                if (task.id !== taskId) return task;
+                const current = task.task_assignees ?? [];
+                const exists = current.some((a) => a.user_id === userId);
+
+                let next: TaskAssigneeRow[];
+                if (checked && !exists) {
+                    next = [...current, { user_id: userId }];
+                } else if (!checked && exists) {
+                    next = current.filter((a) => a.user_id !== userId);
+                } else {
+                    next = current;
+                }
+
+                return { ...task, task_assignees: next };
+            })
+        );
+
+        if (checked) {
+            // Добавляем исполнителя
+            const { error } = await supabase
+                .from("task_assignees")
+                .insert({ task_id: taskId, user_id: userId });
+
+            if (error) {
+                console.error(error);
+                alert(
+                    "Не удалось назначить исполнителя. Возможно, нет прав.\n\n" +
+                    error.message
+                );
+                // откат: перечитываем задачи
+                const { data } = await supabase
+                    .from("tasks")
+                    .select(
+                        "id, title, description, status, assignee_id, due_date, created_at, task_assignees ( user_id )"
+                    )
+                    .eq("project_id", projectId)
+                    .order("created_at", { ascending: true });
+
+                setTasks((data ?? []) as TaskRow[]);
+            }
+        } else {
+            // Убираем исполнителя
+            const { error } = await supabase
+                .from("task_assignees")
+                .delete()
+                .eq("task_id", taskId)
+                .eq("user_id", userId);
+
+            if (error) {
+                console.error(error);
+                alert(
+                    "Не удалось снять исполнителя. Возможно, нет прав.\n\n" +
+                    error.message
+                );
+                const { data } = await supabase
+                    .from("tasks")
+                    .select(
+                        "id, title, description, status, assignee_id, due_date, created_at, task_assignees ( user_id )"
+                    )
+                    .eq("project_id", projectId)
+                    .order("created_at", { ascending: true });
+
+                setTasks((data ?? []) as TaskRow[]);
+            }
+        }
+    };
+
+    // Удаление объекта (проекта) целиком
     const handleDeleteProject = async () => {
         if (!project) return;
 
@@ -251,81 +505,7 @@ export default function ProjectPage() {
             return;
         }
 
-        // Возвращаемся в пространство
         router.push(`/workspaces/${project.workspace_id}`);
-    };
-
-    const handleDeleteTask = async (taskId: string) => {
-        const confirmed = window.confirm("Удалить задачу?");
-        if (!confirmed) return;
-
-        // Оптимистично убираем из стейта
-        setTasks((prev) => prev.filter((t) => t.id !== taskId));
-
-        const { error } = await supabase
-            .from("tasks")
-            .delete()
-            .eq("id", taskId);
-
-        if (error) {
-            console.error(error);
-            alert(
-                "Не удалось удалить задачу. Возможно, нет прав.\n\n" +
-                error.message
-            );
-
-            // Откат: перечитаем задачи для этого проекта
-            const { data } = await supabase
-                .from("tasks")
-                .select(
-                    "id, title, description, status, priority, assignee_id, due_date, created_at"
-                )
-                .eq("project_id", projectId)
-                .order("created_at", { ascending: true });
-
-            setTasks((data ?? []) as Task[]);
-        }
-    };
-
-    // === DRAG'N'DROP ===
-    const handleDragEnd = async (result: DropResult) => {
-        const { destination, source, draggableId } = result;
-
-        // Если бросили мимо колонок
-        if (!destination) return;
-
-        const sourceStatus = source.droppableId;
-        const destStatus = destination.droppableId;
-
-        // Если колонка не поменялась — просто игнорируем (пока не делаем сортировку внутри колонки)
-        if (sourceStatus === destStatus) return;
-
-        // Локально обновляем статус задачи
-        setTasks((prev) =>
-            prev.map((task) =>
-                task.id === draggableId ? { ...task, status: destStatus } : task
-            )
-        );
-
-        // Пишем в Supabase
-        const { error } = await supabase
-            .from("tasks")
-            .update({ status: destStatus })
-            .eq("id", draggableId);
-
-        if (error) {
-            console.error(error);
-            // Если апдейт не удался — откатываемся, перезагружая задачи из БД
-            const { data } = await supabase
-                .from("tasks")
-                .select(
-                    "id, title, description, status, priority, assignee_id, due_date, created_at"
-                )
-                .eq("project_id", projectId)
-                .order("created_at", { ascending: true });
-
-            setTasks((data ?? []) as Task[]);
-        }
     };
 
     if (!userChecked) {
@@ -369,7 +549,7 @@ export default function ProjectPage() {
     return (
         <AppShell>
             <div className="page-inner space-y-6">
-                {/* Заголовок проекта */}
+                {/* Заголовок проекта + кнопка удаления */}
                 <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                     <div className="flex items-start gap-3">
                         <button
@@ -409,7 +589,7 @@ export default function ProjectPage() {
 
                 {/* Форма создания задачи */}
                 <section className="card space-y-4">
-                    <h2 className="card-title">Новая задача</h2>
+                    <h2 className="card-title">Создание новой задачи</h2>
                     <form
                         onSubmit={handleCreateTask}
                         className="grid gap-3 md:grid-cols-2"
@@ -417,27 +597,12 @@ export default function ProjectPage() {
                         <div className="md:col-span-2">
                             <input
                                 type="text"
-                                placeholder="Название задачи"
+                                placeholder="Формулировка задачи"
                                 className="input"
                                 value={taskTitle}
                                 onChange={(e) => setTaskTitle(e.target.value)}
                                 required
                             />
-                        </div>
-
-                        <div>
-                            <label className="block text-[11px] text-slate-400 mb-1">
-                                Приоритет
-                            </label>
-                            <select
-                                className="select"
-                                value={taskPriority}
-                                onChange={(e) => setTaskPriority(e.target.value)}
-                            >
-                                <option value="low">Низкий</option>
-                                <option value="normal">Нормальный</option>
-                                <option value="high">Высокий</option>
-                            </select>
                         </div>
 
                         <div>
@@ -454,12 +619,56 @@ export default function ProjectPage() {
 
                         <div className="md:col-span-2">
                             <textarea
-                                placeholder="Описание задачи (детали, что сделать)"
+                                placeholder="Описание задачи"
                                 className="textarea"
                                 rows={3}
                                 value={taskDescription}
                                 onChange={(e) => setTaskDescription(e.target.value)}
                             />
+                        </div>
+
+                        {/* Выбор исполнителей для новой задачи */}
+                        <div className="md:col-span-2">
+                            <label className="block text-[11px] text-slate-400 mb-1">
+                                Исполнители (участники пространства)
+                            </label>
+
+                            {loadingMembers ? (
+                                <p className="text-[11px] text-slate-500">
+                                    Загружаем участников пространства...
+                                </p>
+                            ) : workspaceUsers.length === 0 ? (
+                                <p className="text-[11px] text-slate-500">
+                                    В этом пространстве пока нет участников.
+                                </p>
+                            ) : (
+                                <div className="flex flex-wrap gap-2">
+                                    {workspaceUsers.map((u) => {
+                                        const checked = newTaskAssignees.includes(u.id);
+                                        return (
+                                            <label
+                                                key={u.id}
+                                                className="inline-flex items-center gap-1 rounded-full border border-slate-700 bg-slate-900/70 px-2 py-0.5 text-[11px] cursor-pointer"
+                                            >
+                                                <input
+                                                    type="checkbox"
+                                                    className="h-3 w-3 rounded border-slate-600 bg-slate-950"
+                                                    checked={checked}
+                                                    onChange={(e) => {
+                                                        const isChecked = e.target.checked;
+                                                        setNewTaskAssignees((prev) =>
+                                                            isChecked
+                                                                ? [...prev, u.id]
+                                                                : prev.filter((id) => id !== u.id)
+                                                        );
+                                                    }}
+                                                />
+                                                <span>{u.name}</span>
+                                            </label>
+                                        );
+                                    })}
+                                </div>
+                            )}
                         </div>
 
                         {createError && (
@@ -480,7 +689,7 @@ export default function ProjectPage() {
                     </form>
                 </section>
 
-                {/* Задачи (Kanban с drag'n'drop) */}
+                {/* Задачи (Kanban с drag'n'drop + исполнители) */}
                 <section className="space-y-3">
                     <h2 className="card-title">Задачи по объекту</h2>
 
@@ -525,53 +734,90 @@ export default function ProjectPage() {
                                                             draggableId={task.id}
                                                             index={index}
                                                         >
-                                                            {(provided) => (
-                                                                <div
-                                                                    ref={provided.innerRef}
-                                                                    {...provided.draggableProps}
-                                                                    {...provided.dragHandleProps}
-                                                                    className="rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2 text-xs flex flex-col gap-1 cursor-grab active:cursor-grabbing"
-                                                                >
-                                                                    <div className="flex justify-between gap-2">
-                                                                        <span className="font-medium text-slate-50">
-                                                                            {task.title}
-                                                                        </span>
-                                                                        <button
-                                                                            type="button"
-                                                                            onClick={(e) => {
-                                                                                e.stopPropagation();
-                                                                                handleDeleteTask(task.id);
-                                                                            }}
-                                                                            className="text-[11px] text-slate-500 hover:text-red-400 px-1"
-                                                                            title="Удалить задачу"
-                                                                        >
-                                                                            ✕
-                                                                        </button>
-                                                                    </div>
-
-                                                                    {task.description && (
-                                                                        <p className="text-[11px] text-slate-300 line-clamp-2">
-                                                                            {task.description}
-                                                                        </p>
-                                                                    )}
-
-                                                                    <div className="mt-1 flex items-center justify-between">
-                                                                        {task.priority && (
-                                                                            <span className="text-[10px] uppercase tracking-wide text-slate-500">
-                                                                                Приоритет: {task.priority}
+                                                            {(provided) => {
+                                                                const assignedIds = new Set(
+                                                                    (task.task_assignees ?? []).map(
+                                                                        (a) => a.user_id
+                                                                    )
+                                                                );
+                                                                return (
+                                                                    <div
+                                                                        ref={provided.innerRef}
+                                                                        {...provided.draggableProps}
+                                                                        {...provided.dragHandleProps}
+                                                                        className="rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2 text-xs flex flex-col gap-1 cursor-grab active:cursor-grabbing"
+                                                                    >
+                                                                        <div className="flex justify-between gap-2">
+                                                                            <span className="font-medium text-slate-50">
+                                                                                {task.title}
                                                                             </span>
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={(e) => {
+                                                                                    e.stopPropagation();
+                                                                                    handleDeleteTask(task.id);
+                                                                                }}
+                                                                                className="text-[11px] text-slate-500 hover:text-red-400 px-1"
+                                                                                title="Удалить задачу"
+                                                                            >
+                                                                                ✕
+                                                                            </button>
+                                                                        </div>
+
+                                                                        {task.description && (
+                                                                            <p className="text-[11px] text-slate-300 line-clamp-2">
+                                                                                {task.description}
+                                                                            </p>
                                                                         )}
-                                                                        {task.due_date && (
-                                                                            <span className="text-[10px] text-slate-500">
-                                                                                Дедлайн:{" "}
-                                                                                {new Date(
-                                                                                    task.due_date
-                                                                                ).toLocaleDateString()}
-                                                                            </span>
+
+                                                                        <div className="mt-1 flex items-center justify-end">
+                                                                            {task.due_date && (
+                                                                                <span className="text-[10px] text-slate-500">
+                                                                                    Дедлайн:{" "}
+                                                                                    {new Date(
+                                                                                        task.due_date
+                                                                                    ).toLocaleDateString()}
+                                                                                </span>
+                                                                            )}
+                                                                        </div>
+
+                                                                        {/* Назначение исполнителей для существующей задачи */}
+                                                                        {workspaceUsers.length > 0 && (
+                                                                            <div className="mt-1">
+                                                                                <p className="text-[10px] text-slate-500 mb-1">
+                                                                                    Исполнители:
+                                                                                </p>
+                                                                                <div className="flex flex-wrap gap-1">
+                                                                                    {workspaceUsers.map((u) => {
+                                                                                        const checked =
+                                                                                            assignedIds.has(u.id);
+                                                                                        return (
+                                                                                            <label
+                                                                                                key={u.id}
+                                                                                                className="inline-flex items-center gap-1 rounded-full border border-slate-700 bg-slate-900/70 px-2 py-0.5 text-[10px] cursor-pointer"
+                                                                                            >
+                                                                                                <input
+                                                                                                    type="checkbox"
+                                                                                                    className="h-3 w-3 rounded border-slate-600 bg-slate-950"
+                                                                                                    checked={checked}
+                                                                                                    onChange={(e) =>
+                                                                                                        handleToggleAssignee(
+                                                                                                            task.id,
+                                                                                                            u.id,
+                                                                                                            e.target.checked
+                                                                                                        )
+                                                                                                    }
+                                                                                                />
+                                                                                                <span>{u.name}</span>
+                                                                                            </label>
+                                                                                        );
+                                                                                    })}
+                                                                                </div>
+                                                                            </div>
                                                                         )}
                                                                     </div>
-                                                                </div>
-                                                            )}
+                                                                );
+                                                            }}
                                                         </Draggable>
                                                     ))
                                                 )}
