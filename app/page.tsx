@@ -1,18 +1,58 @@
-import Image from "next/image";
-import { supabase } from "@/lib/supabaseClient";
+"use client";
 
-export default async function Home() {
-  // Пробуем получить текущую сессию (пока её нет, вернётся null)
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
+import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabaseClient";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+
+export default function HomePage() {
+  const [checking, setChecking] = useState(true);
+  const router = useRouter();
+
+  useEffect(() => {
+    const checkUser = async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (user) {
+        router.push("/workspaces");
+      } else {
+        setChecking(false);
+      }
+    };
+
+    checkUser();
+  }, [router]);
+
+  if (checking) {
+    return (
+      <main className="min-h-screen flex items-center justify-center">
+        <p>Загрузка...</p>
+      </main>
+    );
+  }
 
   return (
-    <main className="p-6">
-      <h1 className="text-2xl font-bold">CYFR Board</h1>
-      <p className="mt-4">
-        Supabase session: {session ? "есть" : "нет"}.
+    <main className="min-h-screen flex flex-col items-center justify-center gap-4 bg-gray-50">
+      <h1 className="text-3xl font-semibold">CYFR Board</h1>
+      <p className="text-gray-600 text-sm">
+        Войдите или зарегистрируйтесь, чтобы работать с объектами и задачами.
       </p>
+      <div className="flex gap-3">
+        <Link
+          href="/login"
+          className="px-4 py-2 rounded bg-blue-600 text-white text-sm"
+        >
+          Войти
+        </Link>
+        <Link
+          href="/register"
+          className="px-4 py-2 rounded border text-sm"
+        >
+          Регистрация
+        </Link>
+      </div>
     </main>
   );
 }
