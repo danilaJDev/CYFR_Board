@@ -189,8 +189,8 @@ export default function WorkspacesPage() {
     if (loadingUser) {
         return (
             <AppShell>
-                <div className="page-inner flex min-h-[50vh] items-center justify-center">
-                    <p className="text-sm text-slate-300">Загрузка...</p>
+                <div className="flex min-h-[50vh] items-center justify-center">
+                    <p className="text-sm text-slate-400">Загрузка данных пользователя...</p>
                 </div>
             </AppShell>
         );
@@ -198,12 +198,12 @@ export default function WorkspacesPage() {
 
     return (
         <AppShell>
-            <div className="page-inner space-y-8">
+            <div className="space-y-8">
                 {/* Заголовок + кнопка выхода */}
-                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                     <div>
-                        <h1 className="text-xl font-semibold">Рабочие пространства</h1>
-                        <p className="mt-1 text-sm text-slate-400">
+                        <h1 className="text-2xl font-bold text-slate-50">Рабочие пространства</h1>
+                        <p className="mt-1.5 text-sm text-slate-400">
                             Объединяйте объекты, отделы и задачи в удобные рабочие области.
                         </p>
                     </div>
@@ -216,11 +216,11 @@ export default function WorkspacesPage() {
                 </div>
 
                 {/* Форма создания workspace */}
-                <section className="card space-y-4">
+                <div className="card space-y-4">
                     <h2 className="card-title">Создать новое пространство</h2>
                     <form
                         onSubmit={handleCreateWorkspace}
-                        className="flex flex-col gap-3"
+                        className="flex flex-col gap-4"
                     >
                         <input
                             type="text"
@@ -248,42 +248,44 @@ export default function WorkspacesPage() {
                         <button
                             type="submit"
                             disabled={creating}
-                            className="btn-primary w-full md:w-auto"
+                            className="btn-primary self-start"
                         >
                             {creating ? "Создаём..." : "Создать пространство"}
                         </button>
                     </form>
-                </section>
+                </div>
 
                 {/* Список workspaces */}
-                <section className="space-y-3">
+                <div className="space-y-4">
                     <h2 className="card-title">Мои пространства</h2>
 
                     {loadingWorkspaces ? (
-                        <p className="text-sm text-slate-400">Загружаем...</p>
+                        <p className="text-sm text-slate-400">Загружаем список...</p>
                     ) : workspaces.length === 0 ? (
-                        <p className="text-sm text-slate-400">
-                            Пока нет ни одного пространства. Создайте первое выше.
-                        </p>
+                        <div className="card text-center py-8">
+                            <p className="text-sm text-slate-400">
+                                Пока нет ни одного пространства. Создайте первое выше.
+                            </p>
+                        </div>
                     ) : (
-                        <ul className="grid gap-3 md:grid-cols-2">
+                        <ul className="grid gap-4 md:grid-cols-2">
                             {workspaces.map((ws) => (
                                 <li
                                     key={ws.id}
-                                    className="rounded-xl border border-slate-800 bg-slate-900/80 px-4 py-3 cursor-pointer hover:border-sky-500 hover:bg-slate-800/80 transition"
+                                    className="card cursor-pointer hover:border-sky-500/60 hover:bg-slate-700/60 transition"
                                     onClick={() => router.push(`/workspaces/${ws.id}`)}
                                 >
-                                    <div className="flex items-start justify-between gap-2">
-                                        <div>
-                                            <h3 className="text-sm font-semibold">
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div className="flex-1">
+                                            <h3 className="font-semibold text-slate-100">
                                                 {ws.name}
                                             </h3>
                                             {ws.description && (
-                                                <p className="mt-1 text-xs text-slate-300">
+                                                <p className="mt-1 text-xs text-slate-400">
                                                     {ws.description}
                                                 </p>
                                             )}
-                                            <span className="mt-1 block text-[11px] text-slate-500">
+                                            <span className="mt-2 block text-[11px] text-slate-500">
                                                 {new Date(
                                                     ws.created_at
                                                 ).toLocaleDateString()}
@@ -296,7 +298,8 @@ export default function WorkspacesPage() {
                                                     e.stopPropagation();
                                                     handleDeleteWorkspace(ws);
                                                 }}
-                                                className="text-[11px] text-slate-500 hover:text-red-400 px-1"
+                                                className="text-xs text-slate-500 hover:text-red-400 px-1 py-0.5"
+                                                title="Удалить пространство"
                                             >
                                                 {deletingId === ws.id
                                                     ? "..."
@@ -308,7 +311,7 @@ export default function WorkspacesPage() {
                             ))}
                         </ul>
                     )}
-                </section>
+                </div>
             </div>
         </AppShell>
     );
