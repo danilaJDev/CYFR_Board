@@ -64,6 +64,8 @@ export default function ProjectPage() {
     const [creatingTask, setCreatingTask] = useState(false);
     const [createError, setCreateError] = useState<string | null>(null);
 
+    const [deletingProject, setDeletingProject] = useState(false);
+
     // 1. Проверяем, залогинен ли пользователь
     useEffect(() => {
         const checkUser = async () => {
@@ -223,6 +225,68 @@ export default function ProjectPage() {
         setCreatingTask(false);
     };
 
+    const handleDeleteProject = async () => {
+        if (!project) return;
+
+        const confirmed = window.confirm(
+            `Удалить объект «${project.name}»? Все задачи по этому объекту тоже будут удалены.`
+        );
+        if (!confirmed) return;
+
+        setDeletingProject(true);
+
+        const { error } = await supabase
+            .from("projects")
+            .delete()
+            .eq("id", project.id);
+
+        setDeletingProject(false);
+
+        if (error) {
+            console.error(error);
+            alert(
+                "Не удалось удалить объект. Возможно, нет прав или есть связанные данные.\n\n" +
+                error.message
+            );
+            return;
+        }
+
+        // Возвращаемся в пространство
+        router.push(`/workspaces/${project.workspace_id}`);
+    };
+
+    const handleDeleteTask = async (taskId: string) => {
+        const confirmed = window.confirm("Удалить задачу?");
+        if (!confirmed) return;
+
+        // Оптимистично убираем из стейта
+        setTasks((prev) => prev.filter((t) => t.id !== taskId));
+
+        const { error } = await supabase
+            .from("tasks")
+            .delete()
+            .eq("id", taskId);
+
+        if (error) {
+            console.error(error);
+            alert(
+                "Не удалось удалить задачу. Возможно, нет прав.\n\n" +
+                error.message
+            );
+
+            // Откат: перечитаем задачи для этого проекта
+            const { data } = await supabase
+                .from("tasks")
+                .select(
+                    "id, title, description, status, priority, assignee_id, due_date, created_at"
+                )
+                .eq("project_id", projectId)
+                .order("created_at", { ascending: true });
+
+            setTasks((data ?? []) as Task[]);
+        }
+    };
+
     // === DRAG'N'DROP ===
     const handleDragEnd = async (result: DropResult) => {
         const { destination, source, draggableId } = result;
@@ -322,6 +386,15 @@ export default function ProjectPage() {
                             </div>
                         </div>
                     </div>
+
+                    <button
+                        type="button"
+                        onClick={handleDeleteProject}
+                        disabled={deletingProject}
+                        className="btn-outline btn-sm border-red-500 text-red-400 hover:bg-red-500/10 hover:text-red-300"
+                    >
+                        {deletingProject ? "Удаляем..." : "Удалить объект"}
+                    </button>
                 </div>
 
                 {/* Описание проекта */}
@@ -463,6 +536,17 @@ export default function ProjectPage() {
                                                                         <span className="font-medium text-slate-50">
                                                                             {task.title}
                                                                         </span>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                handleDeleteTask(task.id);
+                                                                            }}
+                                                                            className="text-[11px] text-slate-500 hover:text-red-400 px-1"
+                                                                            title="Удалить задачу"
+                                                                        >
+                                                                            ✕
+                                                                        </button>
                                                                     </div>
 
                                                                     {task.description && (

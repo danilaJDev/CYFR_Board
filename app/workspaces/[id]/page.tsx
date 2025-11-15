@@ -32,6 +32,7 @@ export default function WorkspaceDetailsPage() {
     const [userId, setUserId] = useState<string | null>(null);
     const [isOwner, setIsOwner] = useState(false);
     const [deleting, setDeleting] = useState(false);
+    const [deletingProjectId, setDeletingProjectId] = useState<string | null>(null);
 
     const [workspace, setWorkspace] = useState<Workspace | null>(null);
     const [projects, setProjects] = useState<Project[]>([]);
@@ -218,6 +219,35 @@ export default function WorkspaceDetailsPage() {
         router.push("/workspaces");
     };
 
+    const handleDeleteProject = async (project: Project) => {
+        if (!isOwner) return;
+
+        const confirmed = window.confirm(
+            `Удалить объект «${project.name}»? Все задачи по этому объекту тоже будут удалены.`
+        );
+        if (!confirmed) return;
+
+        setDeletingProjectId(project.id);
+
+        const { error } = await supabase
+            .from("projects")
+            .delete()
+            .eq("id", project.id);
+
+        setDeletingProjectId(null);
+
+        if (error) {
+            console.error(error);
+            setError(
+                "Не удалось удалить объект. Возможно, нет прав или есть связанные данные.\n\n" +
+                error.message
+            );
+            return;
+        }
+
+        setProjects((prev) => prev.filter((p) => p.id !== project.id));
+    };
+
     if (!userChecked) {
         return (
             <AppShell>
@@ -380,14 +410,34 @@ export default function WorkspaceDetailsPage() {
                                     className="rounded-xl border border-slate-800 bg-slate-900/80 px-4 py-3 cursor-pointer hover:border-sky-500 hover:bg-slate-800/80 transition"
                                     onClick={() => router.push(`/projects/${project.id}`)}
                                 >
-                                    <div className="flex items-center justify-between gap-2">
-                                        <h3 className="text-sm font-semibold">
-                                            {project.name}
-                                        </h3>
-                                        {project.code && (
-                                            <span className="text-[11px] text-slate-500">
-                                                {project.code}
-                                            </span>
+                                    <div className="flex items-start justify-between gap-2">
+                                        <div>
+                                            <h3 className="text-sm font-semibold">
+                                                {project.name}
+                                            </h3>
+                                            {project.address && (
+                                                <p className="mt-1 text-xs text-slate-300">
+                                                    {project.address}
+                                                </p>
+                                            )}
+                                            {project.description && (
+                                                <p className="mt-1 text-xs text-slate-400 line-clamp-2">
+                                                    {project.description}
+                                                </p>
+                                            )}
+                                        </div>
+
+                                        {isOwner && (
+                                            <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    handleDeleteProject(project);
+                                                }}
+                                                className="text-[11px] text-slate-500 hover:text-red-400 px-1"
+                                            >
+                                                {deletingProjectId === project.id ? "..." : "Удалить"}
+                                            </button>
                                         )}
                                     </div>
                                     {project.address && (
