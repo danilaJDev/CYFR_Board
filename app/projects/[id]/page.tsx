@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { AppShell } from "@/components/app-shell";
@@ -10,6 +10,7 @@ import {
     Draggable,
     type DropResult,
 } from "@hello-pangea/dnd";
+import { Modal } from "@/components/modal";
 
 type Project = {
     id: string;
@@ -76,9 +77,12 @@ export default function ProjectPage() {
     const [creatingTask, setCreatingTask] = useState(false);
     const [createError, setCreateError] = useState<string | null>(null);
     const [newTaskAssignees, setNewTaskAssignees] = useState<string[]>([]);
+    const [isModalOpen, setIsModalOpen] = useState(false);
 
     // Удаление задач / проекта
     const [deletingProject, setDeletingProject] = useState(false);
+    const [assigneePopoverTaskId, setAssigneePopoverTaskId] = useState<string | null>(null);
+    const assigneePopoverRef = useRef<HTMLDivElement>(null);
 
     // 1. Проверяем, залогинен ли пользователь
     useEffect(() => {
@@ -478,6 +482,20 @@ export default function ProjectPage() {
         }
     };
 
+    // Закрытие поповера при клике вне его
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (assigneePopoverRef.current && !assigneePopoverRef.current.contains(event.target as Node)) {
+                setAssigneePopoverTaskId(null);
+            }
+        };
+
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => {
+            document.removeEventListener("mousedown", handleClickOutside);
+        };
+    }, []);
+
     // Удаление объекта (проекта) целиком
     const handleDeleteProject = async () => {
         if (!project) return;
@@ -587,9 +605,11 @@ export default function ProjectPage() {
                     </section>
                 )}
 
-                {/* Форма создания задачи */}
-                <section className="card space-y-4">
-                    <h2 className="card-title">Создание новой задачи</h2>
+                <Modal
+                    isOpen={isModalOpen}
+                    onClose={() => setIsModalOpen(false)}
+                    title="Создание новой задачи"
+                >
                     <form
                         onSubmit={handleCreateTask}
                         className="grid gap-3 md:grid-cols-2"
@@ -687,7 +707,7 @@ export default function ProjectPage() {
                             </button>
                         </div>
                     </form>
-                </section>
+                </Modal>
 
                 {/* Задачи (Kanban с drag'n'drop + исполнители) */}
                 <section className="space-y-3">
@@ -697,12 +717,12 @@ export default function ProjectPage() {
                         <p className="text-xs text-red-400">{tasksError}</p>
                     )}
 
+                    {tasksError && (
+                        <p className="text-xs text-red-400">{tasksError}</p>
+                    )}
+
                     {loadingTasks ? (
                         <p className="text-sm text-slate-400">Загружаем задачи...</p>
-                    ) : tasks.length === 0 ? (
-                        <p className="text-sm text-slate-400">
-                            Пока нет задач. Создайте первую выше.
-                        </p>
                     ) : (
                         <DragDropContext onDragEnd={handleDragEnd}>
                             <div className="grid gap-4 md:grid-cols-3">
@@ -712,12 +732,18 @@ export default function ProjectPage() {
                                             <div
                                                 ref={provided.innerRef}
                                                 {...provided.droppableProps}
-                                                className="rounded-xl border border-slate-800 bg-slate-900/80 p-3 flex flex-col gap-2 min-h-[140px]"
+                                                className="group rounded-xl border border-slate-800 bg-slate-900/80 p-3 flex flex-col gap-2 min-h-[140px]"
                                             >
                                                 <div className="mb-1 flex items-center justify-between">
                                                     <h3 className="text-sm font-semibold">
                                                         {STATUS_LABELS[statusKey]}
                                                     </h3>
+                                                    <button
+                                                        onClick={() => setIsModalOpen(true)}
+                                                        className="btn-outline btn-sm"
+                                                    >
+                                                        +
+                                                    </button>
                                                     <span className="text-[11px] text-slate-400">
                                                         {tasksByStatus[statusKey].length}
                                                     </span>
@@ -781,40 +807,41 @@ export default function ProjectPage() {
                                                                             )}
                                                                         </div>
 
-                                                                        {/* Назначение исполнителей для существующей задачи */}
-                                                                        {workspaceUsers.length > 0 && (
-                                                                            <div className="mt-1">
-                                                                                <p className="text-[10px] text-slate-500 mb-1">
-                                                                                    Исполнители:
-                                                                                </p>
-                                                                                <div className="flex flex-wrap gap-1">
-                                                                                    {workspaceUsers.map((u) => {
-                                                                                        const checked =
-                                                                                            assignedIds.has(u.id);
-                                                                                        return (
-                                                                                            <label
-                                                                                                key={u.id}
-                                                                                                className="inline-flex items-center gap-1 rounded-full border border-slate-700 bg-slate-900/70 px-2 py-0.5 text-[10px] cursor-pointer"
-                                                                                            >
+                                                                        <div className="mt-2 flex items-center gap-2">
+                                                                            <div className="flex items-center">
+                                                                                {workspaceUsers
+                                                                                    .filter(u => assignedIds.has(u.id))
+                                                                                    .map(u => (
+                                                                                        <div key={u.id} className="w-5 h-5 rounded-full bg-slate-700 text-white text-[10px] flex items-center justify-center -ml-1 border-2 border-slate-950/60" title={u.name}>
+                                                                                            {u.name.charAt(0)}
+                                                                                        </div>
+                                                                                    ))}
+                                                                            </div>
+                                                                            <div className="relative">
+                                                                                <button
+                                                                                    onClick={() => setAssigneePopoverTaskId(assigneePopoverTaskId === task.id ? null : task.id)}
+                                                                                    className="w-5 h-5 rounded-full bg-slate-800 hover:bg-slate-700 text-white text-xs flex items-center justify-center"
+                                                                                >
+                                                                                    +
+                                                                                </button>
+                                                                                {assigneePopoverTaskId === task.id && (
+                                                                                    <div ref={assigneePopoverRef} className="absolute top-full mt-2 right-0 w-48 bg-slate-700 border border-slate-600 rounded-lg shadow-xl z-10 p-2">
+                                                                                        <p className="text-[10px] text-slate-400 mb-2">Назначить:</p>
+                                                                                        {workspaceUsers.map(u => (
+                                                                                            <label key={u.id} className="flex items-center gap-2 text-xs p-1 rounded hover:bg-slate-600 cursor-pointer">
                                                                                                 <input
                                                                                                     type="checkbox"
-                                                                                                    className="h-3 w-3 rounded border-slate-600 bg-slate-950"
-                                                                                                    checked={checked}
-                                                                                                    onChange={(e) =>
-                                                                                                        handleToggleAssignee(
-                                                                                                            task.id,
-                                                                                                            u.id,
-                                                                                                            e.target.checked
-                                                                                                        )
-                                                                                                    }
+                                                                                                    className="h-3 w-3 rounded border-slate-500 bg-slate-800"
+                                                                                                    checked={assignedIds.has(u.id)}
+                                                                                                    onChange={e => handleToggleAssignee(task.id, u.id, e.target.checked)}
                                                                                                 />
                                                                                                 <span>{u.name}</span>
                                                                                             </label>
-                                                                                        );
-                                                                                    })}
-                                                                                </div>
+                                                                                        ))}
+                                                                                    </div>
+                                                                                )}
                                                                             </div>
-                                                                        )}
+                                                                        </div>
                                                                     </div>
                                                                 );
                                                             }}
